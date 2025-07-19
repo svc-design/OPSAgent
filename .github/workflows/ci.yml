@@ -30,9 +30,9 @@ jobs:
         shell: bash
         run: |
           if [[ "$RUNNER_OS" == "Windows" ]]; then
-            go build -o opsagent.exe ./...
+            go build -o opsagent.exe .
           else
-            go build -o opsagent ./...
+            go build -o opsagent .
           fi
 
       - name: Package artifact
