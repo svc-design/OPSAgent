@@ -27,7 +27,7 @@ jobs:
             arch: amd64
           - platform: macos
             arch: arm64
-    runs-on: ${{ fromJson("{"linux":"ubuntu-22.04","windows":"windows-latest","macos":"macos-latest"}")[matrix.platform] }}
+    runs-on: ${{ fromJson('{"linux":"ubuntu-22.04","windows":"windows-latest","macos":"macos-latest"}')[matrix.platform] }}
     env:
       GOOS: ${{ matrix.platform }}
       GOARCH: ${{ matrix.arch }}
