@@ -1,0 +1,88 @@
+name: Build and Release OPSAgent
+
+on:
+  push:
+    branches: [ main ]
+    tags: ['v*']
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [linux, windows, macos]
+        arch: [amd64, arm64]
+        exclude:
+          - platform: windows
+            arch: arm64
+          - platform: macos
+            arch: amd64
+        include:
+          - platform: linux
+            arch: amd64
+          - platform: windows
+            arch: amd64
+          - platform: macos
+            arch: arm64
+    runs-on: ${{ fromJson("{"linux":"ubuntu-22.04","windows":"windows-latest","macos":"macos-latest"}")[matrix.platform] }}
+    env:
+      GOOS: ${{ matrix.platform }}
+      GOARCH: ${{ matrix.arch }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Run tests
+        shell: bash
+        run: go test ./...
+
+      - name: Build binary
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            go build -o opsagent.exe .
+          else
+            go build -o opsagent .
+          fi
+
+      - name: Package artifact
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            zip opsagent-${{ matrix.platform }}-${{ matrix.arch }}.zip opsagent.exe
+            echo "ARTIFACT=opsagent-${{ matrix.platform }}-${{ matrix.arch }}.zip" >> $GITHUB_ENV
+          else
+            tar -czf opsagent-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz opsagent
+            echo "ARTIFACT=opsagent-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz" >> $GITHUB_ENV
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: opsagent-${{ matrix.platform }}-${{ matrix.arch }}
+          path: ${{ env.ARTIFACT }}
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: dist/**/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
