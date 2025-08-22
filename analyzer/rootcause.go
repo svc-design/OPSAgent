@@ -1,7 +1,7 @@
 package analyzer
 
 import (
-	"github.com/yourorg/opsagent/model"
+	"github.com/yourname/ops-agent-poc/model"
 )
 
 // InferRootCause tries to infer the root cause of a trace.

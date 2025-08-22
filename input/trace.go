@@ -1,8 +1,8 @@
 package input
 
 import (
-	"github.com/yourorg/opsagent/model"
-	"github.com/yourorg/opsagent/utils"
+	"github.com/yourname/ops-agent-poc/model"
+	"github.com/yourname/ops-agent-poc/utils"
 )
 
 // FetchTraces retrieves trace data for a service within a time window.
