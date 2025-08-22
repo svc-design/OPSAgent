@@ -1,4 +1,4 @@
-name: CI
+name: Build and Release OPSAgent
 
 on:
   push:
@@ -6,6 +6,7 @@ on:
     tags: ['v*']
   pull_request:
     branches: [ main ]
+  workflow_dispatch: [ main ]
 
 jobs:
   build:
@@ -13,6 +14,32 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
+
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [linux, windows, macos]
+        arch: [amd64, arm64]
+        exclude:
+          - platform: windows
+            arch: arm64
+          - platform: macos
+            arch: amd64
+        include:
+          - platform: linux
+            arch: amd64
+          - platform: windows
+            arch: amd64
+          - platform: macos
+            arch: arm64
+    runs-on: ${{ fromJson("{"linux":"ubuntu-22.04","windows":"windows-latest","macos":"macos-latest"}")[matrix.platform] }}
+    env:
+      GOOS: ${{ matrix.platform }}
+      GOARCH: ${{ matrix.arch }}
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -39,17 +66,17 @@ jobs:
         shell: bash
         run: |
           if [[ "$RUNNER_OS" == "Windows" ]]; then
-            zip opsagent-${{ matrix.os }}.zip opsagent.exe
-            echo "ARTIFACT=opsagent-${{ matrix.os }}.zip" >> $GITHUB_ENV
+            zip opsagent-${{ matrix.platform }}-${{ matrix.arch }}.zip opsagent.exe
+            echo "ARTIFACT=opsagent-${{ matrix.platform }}-${{ matrix.arch }}.zip" >> $GITHUB_ENV
           else
-            tar -czf opsagent-${{ matrix.os }}.tar.gz opsagent
-            echo "ARTIFACT=opsagent-${{ matrix.os }}.tar.gz" >> $GITHUB_ENV
+            tar -czf opsagent-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz opsagent
+            echo "ARTIFACT=opsagent-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz" >> $GITHUB_ENV
           fi
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: opsagent-${{ matrix.os }}
+          name: opsagent-${{ matrix.platform }}-${{ matrix.arch }}
           path: ${{ env.ARTIFACT }}
 
   release:
