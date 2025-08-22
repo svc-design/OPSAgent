@@ -25,6 +25,23 @@ This example project wires together TimescaleDB, OpenObserve and an OpenTelemetr
 
 The OTEL Collector is configured in `configs/otelcol.yaml` to forward OTLP signals to OpenObserve. Database objects such as the metrics hypertable, a one minute continuous aggregate, a Top‑K view and incident/audit tables are created by `db/001_schema.sql`.
 
+## Environment variables
+
+The agent is configured through the following environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PG_URL` | `postgres://postgres:postgres@127.0.0.1:5432/ops?sslmode=disable` | PostgreSQL connection string. |
+| `GITHUB_TOKEN` | – | Personal access token with `repo:contents` and `pull_request` scopes. |
+| `GITHUB_OWNER` | – | Owner of the target GitHub repository. |
+| `GITHUB_REPO` | – | Name of the target GitHub repository. |
+| `GITHUB_BASE_BRANCH` | `main` | Base branch used when creating pull requests. |
+| `GITHUB_FILE_PATH` | `charts/app/values.yaml` | Path to the YAML file containing the feature flag. |
+| `FLAG_PATH` | `featureFlags.recommendation_v2` | Dot-separated path to the flag within the YAML file. |
+| `ARGOCD_URL` | – | *(Optional)* ArgoCD base URL. |
+| `ARGOCD_TOKEN` | – | *(Optional)* ArgoCD API token. |
+| `ARGOCD_APP` | – | *(Optional)* ArgoCD application to check before closing an incident. |
+
 ## GitHub PR template
 The agent uses `configs/github/pr_template.md` when opening pull requests.
 
