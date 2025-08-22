@@ -3,8 +3,8 @@ package output
 import (
 	"fmt"
 
-	"github.com/yourorg/opsagent/model"
-	"github.com/yourorg/opsagent/utils"
+	"github.com/yourname/ops-agent-poc/model"
+	"github.com/yourname/ops-agent-poc/utils"
 )
 
 // GenerateReport prints an analysis report.

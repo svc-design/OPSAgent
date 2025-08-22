@@ -12,25 +12,35 @@ import (
 	"github.com/google/go-github/v55/github"
 	"github.com/jackc/pgx/v5"
 	"golang.org/x/oauth2"
+	"gopkg.in/yaml.v3"
 )
 
 type AlertmanagerWebhook struct {
-	Alerts []struct {
+	CommonLabels map[string]string `json:"commonLabels"`
+	Alerts       []struct {
 		Status      string            `json:"status"`
 		Labels      map[string]string `json:"labels"`
 		Annotations map[string]string `json:"annotations"`
 	} `json:"alerts"`
 }
 
+type Response struct {
+	IncidentID int    `json:"incident_id"`
+	PRURL      string `json:"pr_url"`
+	Verified   bool   `json:"verified"`
+}
+
 func main() {
-	dsn := getenv("DB_DSN", "postgres://postgres:password@localhost:5432/observability?sslmode=disable")
+	dsn := getenv("PG_URL", "postgres://postgres:postgres@127.0.0.1:5432/ops?sslmode=disable")
 	conn, err := pgx.Connect(context.Background(), dsn)
 	if err != nil {
 		log.Fatalf("connect db: %v", err)
 	}
 	defer conn.Close(context.Background())
 
-	http.HandleFunc("/webhook", func(w http.ResponseWriter, r *http.Request) {
+	listen := getenv("LISTEN_ADDR", ":8080")
+
+	http.HandleFunc("/alertmanager", func(w http.ResponseWriter, r *http.Request) {
 		var hook AlertmanagerWebhook
 		if err := json.NewDecoder(r.Body).Decode(&hook); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -41,6 +51,7 @@ func main() {
 			return
 		}
 		desc := hook.Alerts[0].Annotations["summary"]
+		svc := hook.CommonLabels["service"]
 		var id int
 		if err := conn.QueryRow(context.Background(),
 			"INSERT INTO incidents (description) VALUES ($1) RETURNING id", desc).Scan(&id); err != nil {
@@ -52,18 +63,25 @@ func main() {
 			log.Printf("create PR: %v", err)
 		}
 		checkArgoCD()
-		verifyAndClose(context.Background(), conn, id)
-		w.Write([]byte(prURL))
+		verified := verifyAndClose(context.Background(), conn, id, svc)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(Response{IncidentID: id, PRURL: prURL, Verified: verified})
 	})
 
-	log.Println("agent listening on :8080")
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	log.Printf("agent listening on %s", listen)
+	log.Fatal(http.ListenAndServe(listen, nil))
 }
 
 func createPR(desc string) (string, error) {
 	token := os.Getenv("GITHUB_TOKEN")
+	owner := os.Getenv("GITHUB_OWNER")
 	repo := os.Getenv("GITHUB_REPO")
-	owner, name := splitRepo(repo)
+	base := getenv("GITHUB_BASE_BRANCH", "main")
+	file := os.Getenv("GITHUB_FILE_PATH")
+	flag := os.Getenv("FLAG_PATH")
+	if file != "" && flag != "" {
+		toggleFlag(file, flag)
+	}
 	ctx := context.Background()
 	ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token})
 	tc := oauth2.NewClient(ctx, ts)
@@ -72,11 +90,11 @@ func createPR(desc string) (string, error) {
 	body := readTemplate()
 	newPR := &github.NewPullRequest{
 		Title: github.String(desc),
-		Head:  github.String("main"),
-		Base:  github.String("main"),
+		Head:  github.String(base),
+		Base:  github.String(base),
 		Body:  github.String(body),
 	}
-	pr, _, err := client.PullRequests.Create(ctx, owner, name, newPR)
+	pr, _, err := client.PullRequests.Create(ctx, owner, repo, newPR)
 	if err != nil {
 		return "", err
 	}
@@ -91,40 +109,72 @@ func readTemplate() string {
 	return string(b)
 }
 
-func verifyAndClose(ctx context.Context, conn *pgx.Conn, id int) {
-	var avg float64
-	if err := conn.QueryRow(ctx, "SELECT COALESCE(avg(avg_value),0) FROM metrics_1m WHERE name='cpu' AND bucket > now() - interval '5 minutes'").Scan(&avg); err != nil {
-		log.Printf("verify incident: %v", err)
+func toggleFlag(file, path string) {
+	b, err := os.ReadFile(file)
+	if err != nil {
 		return
 	}
-	if avg < 80 {
+	var data map[string]interface{}
+	if err := yaml.Unmarshal(b, &data); err != nil {
+		return
+	}
+	parts := strings.Split(path, ".")
+	m := data
+	for i, p := range parts {
+		if i == len(parts)-1 {
+			m[p] = false
+		} else {
+			next, ok := m[p].(map[string]interface{})
+			if !ok {
+				next = make(map[string]interface{})
+				m[p] = next
+			}
+			m = next
+		}
+	}
+	out, err := yaml.Marshal(data)
+	if err != nil {
+		return
+	}
+	_ = os.WriteFile(file, out, 0644)
+}
+
+func verifyAndClose(ctx context.Context, conn *pgx.Conn, id int, svc string) bool {
+	var improved bool
+	if err := conn.QueryRow(ctx, "SELECT recent_latency_improved($1)", svc).Scan(&improved); err != nil {
+		log.Printf("verify incident: %v", err)
+		return false
+	}
+	if improved {
 		if _, err := conn.Exec(ctx, "UPDATE incidents SET status='closed' WHERE id=$1", id); err != nil {
 			log.Printf("close incident: %v", err)
 		}
 	}
+	return improved
 }
 
 func checkArgoCD() {
 	url := os.Getenv("ARGOCD_URL")
 	app := os.Getenv("ARGOCD_APP")
+	token := os.Getenv("ARGOCD_TOKEN")
 	if url == "" || app == "" {
 		return
 	}
-	resp, err := http.Get(fmt.Sprintf("%s/api/v1/applications/%s", url, app))
+	req, err := http.NewRequest("GET", fmt.Sprintf("%s/api/v1/applications/%s", url, app), nil)
+	if err != nil {
+		log.Printf("argocd request: %v", err)
+		return
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		log.Printf("argocd health: %v", err)
 		return
 	}
 	defer resp.Body.Close()
 	log.Printf("argocd status: %s", resp.Status)
-}
-
-func splitRepo(repo string) (string, string) {
-	parts := strings.Split(repo, "/")
-	if len(parts) != 2 {
-		return "", ""
-	}
-	return parts[0], parts[1]
 }
 
 func getenv(key, def string) string {
