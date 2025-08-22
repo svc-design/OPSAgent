@@ -67,9 +67,9 @@ func NewDB(ctx context.Context, url string) (*DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	pctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	if err := pool.Ping(ctx); err != nil {
+	if err := pool.Ping(pctx); err != nil {
 		return nil, err
 	}
 	return &DB{pool: pool}, nil
@@ -120,7 +120,7 @@ func (d *DB) CloseIncidentIfStable(ctx context.Context, incID int64, service str
 	return false, nil
 }
 
-// ---------- Alertmanager webhook ----------
+// ---------- Alertmanager payload ----------
 type Alert struct {
 	Status       string            `json:"status"`
 	CommonLabels map[string]string `json:"commonLabels"`
@@ -131,7 +131,7 @@ type Alert struct {
 }
 
 func fingerprintFromAlert(a Alert) string {
-	// A very rough fingerprint for PoC
+	// simple PoC fingerprint
 	b, _ := json.Marshal(a.CommonLabels)
 	return base64.StdEncoding.EncodeToString(b)
 }
@@ -259,7 +259,6 @@ func toggleFlagInYAML(src []byte, dotPath string, desired bool) ([]byte, error) 
 	var cur any = m
 	for i, p := range parts {
 		if i == len(parts)-1 {
-			// set value
 			if mm, ok := cur.(map[string]any); ok {
 				mm[p] = desired
 			} else {
@@ -359,6 +358,7 @@ func handleAlert(db *DB, cfg Config) http.HandlerFunc {
 			http.Error(w, "getFile: "+err.Error(), 500)
 			return
 		}
+		// GitHub contents API returns base64 with newlines; strip them before decoding
 		orig, _ := base64.StdEncoding.DecodeString(strings.ReplaceAll(b64, "\n", ""))
 		patched, err := toggleFlagInYAML(orig, cfg.FlagPath, false)
 		if err != nil {
@@ -404,7 +404,8 @@ func main() {
 		log.Println("[WARN] GitHub env not fully set; PR creation will fail.")
 	}
 	ctx := context.Background()
-	db, err := NewDB(ctx, cfg.PGURL)
+	_ = ctx
+	db, err := NewDB(context.Background(), cfg.PGURL)
 	if err != nil {
 		log.Fatalf("db: %v", err)
 	}

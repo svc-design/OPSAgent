@@ -3,10 +3,10 @@ package main
 import (
 	"fmt"
 
-	"github.com/yourorg/opsagent/analyzer"
-	"github.com/yourorg/opsagent/input"
-	"github.com/yourorg/opsagent/model"
-	"github.com/yourorg/opsagent/output"
+	"github.com/yourname/ops-agent-poc/analyzer"
+	"github.com/yourname/ops-agent-poc/input"
+	"github.com/yourname/ops-agent-poc/model"
+	"github.com/yourname/ops-agent-poc/output"
 )
 
 func main() {
