@@ -1,49 +1,32 @@
-# OPSAgent
+# XOpsAgent
 
-OPSAgent is a skeleton project for an operations diagnosis agent written in Go. The
-project is inspired by the "OPS Agent 思维链条" design which describes a
-five step approach to locate and explain production issues.
+This example project wires together TimescaleDB, OpenObserve and an OpenTelemetry Collector. A small Go agent receives Alertmanager webhooks, opens a GitHub pull request and optionally checks ArgoCD before closing an incident in TimescaleDB.
 
-This repository contains minimal placeholder code to bootstrap the future
-implementation. The goal of this version is to provide an initial structure
-that will be expanded with real logic using the Gong Codex DSL and Go
-implementations.
+## Prerequisites
+- Docker and docker-compose
+- Go 1.21+
 
-## Module Layout
+## Getting started
 
-```
-opsagent/
-├── agent.go               # Entry point
-├── input/                 # Data ingestion modules
-│   ├── metrics.go         # Metrics parsing (Prometheus)
-│   ├── logs.go            # Log clustering
-│   ├── trace.go           # Trace processing
-│   └── events.go          # Kubernetes/system events
-├── analyzer/              # Analysis logic
-│   ├── analysis.go        # Service and trace analysis stubs
-│   ├── rootcause.go       # Root cause inference
-│   ├── profiler.go        # Profiling helpers
-│   └── ruleengine.go      # Pluggable rule engine
-├── model/                 # Shared model definitions
-│   ├── types.go
-│   └── config.go
-├── output/                # Report generation
-│   └── reporter.go
-└── utils/
-    └── timeutil.go        # Time range helpers
-```
+1. Copy `.env.example` to `.env` and fill in the required values for your environment.
+2. Start the observability stack:
+   ```bash
+   docker-compose up -d
+   ```
+3. Initialize the database schema:
+   ```bash
+   scripts/load_schema.sh
+   ```
+4. Build and run the agent:
+   ```bash
+   go build ./cmd/agent && ./agent
+   ```
+5. Configure Alertmanager to send webhooks to `http://localhost:8080/webhook`.
 
-## Building
+The OTEL Collector is configured in `configs/otelcol.yaml` to forward OTLP signals to OpenObserve. Database objects such as the metrics hypertable, a one minute continuous aggregate, a Top‑K view and incident/audit tables are created by `db/001_schema.sql`.
 
-The project uses Go modules. To build the main binary:
+## GitHub PR template
+The agent uses `configs/github/pr_template.md` when opening pull requests.
 
-```bash
-$ go build -o opsagent
-```
-
-The generated executable currently performs no real analysis; all modules
-contain placeholder implementations.
-
-## Documentation
-
-Additional documentation can be found in the [`docs/`](docs) directory.
+## License
+This project is released under the MIT License.
